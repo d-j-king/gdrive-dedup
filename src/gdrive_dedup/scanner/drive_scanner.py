@@ -61,9 +61,7 @@ class DriveScanner:
             # Build query
             query_parts = ["trashed = false"]
 
-            # Exclude workspace files
-            for mime_type in WORKSPACE_MIME_TYPES:
-                query_parts.append(f"mimeType != '{mime_type}'")
+            # Note: We filter workspace files after fetch (checking for MD5)
 
             if folder_id:
                 query_parts.append(f"'{folder_id}' in parents")
@@ -71,8 +69,7 @@ class DriveScanner:
             if owned_only:
                 query_parts.append("'me' in owners")
 
-            if min_size > 0:
-                query_parts.append(f"size >= {min_size}")
+            # Note: size filter applied client-side (not supported in query)
 
             query = " and ".join(query_parts)
 
@@ -105,6 +102,11 @@ class DriveScanner:
                 for file_data in files:
                     # Skip files without size or MD5
                     if "size" not in file_data or "md5Checksum" not in file_data:
+                        continue
+
+                    # Apply client-side size filter
+                    file_size = int(file_data.get("size", 0))
+                    if file_size < min_size:
                         continue
 
                     try:
