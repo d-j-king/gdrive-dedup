@@ -22,14 +22,13 @@ dependencies = [
     "pydantic>=2.4.0",
     "pydantic-settings>=2.0.0",
     "humanize>=4.8.0",
-    # Video analysis dependencies
+    # Video analysis dependencies (core)
     "opencv-python>=4.8.0",
     "pillow>=10.0.0",
     "numpy>=1.24.0",
     "torch>=2.0.0",
     "torchvision>=0.15.0",
     "transformers>=4.30.0",
-    "insightface>=0.7.3",
     "onnxruntime>=1.15.0",
     "mediapipe>=0.10.0",
     "faiss-cpu>=1.7.4",
@@ -38,6 +37,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+face = [
+    "insightface>=0.7.3",
+]
+
 dev = [
     "pytest>=7.4.0",
     "pytest-mock>=3.11.0",
