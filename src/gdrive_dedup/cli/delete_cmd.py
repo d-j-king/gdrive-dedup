@@ -29,7 +29,7 @@ delete_app = typer.Typer(help="Delete duplicate files")
 def delete(
     strategy: str = typer.Option(
         ..., "--strategy", "-s",
-        help="Keep strategy: newest, oldest, shortest, longest, deepest, path"
+        help="Keep strategy: newest, oldest, shortest, longest, deepest, path, merge-names"
     ),
     keep_path: Optional[str] = typer.Option(
         None, "--keep-path", "-p", help="Glob pattern for paths to keep (for path strategy)"
@@ -99,8 +99,43 @@ def delete(
                         print_info("All duplicates are in different folders (intentionally kept)")
                     return
 
-            # Collect files to trash
+            # Collect files to trash and files to rename
             files_to_trash = []
+            files_to_rename = []  # List of (file_id, old_name, new_name)
+
+            # First pass: collect rename info without size
+            group_rename_map = {}  # Map group to (file, new_name)
+            if hasattr(deletion_strategy, 'get_rename_info'):
+                for group in duplicate_groups:
+                    rename_info = deletion_strategy.get_rename_info(group, include_size=False)
+                    if rename_info:
+                        group_rename_map[group.group_id] = (group, rename_info)
+
+                # Detect naming conflicts (same name for different groups)
+                name_to_groups = {}
+                for group_id, (group, (file, new_name)) in group_rename_map.items():
+                    if new_name not in name_to_groups:
+                        name_to_groups[new_name] = []
+                    name_to_groups[new_name].append(group_id)
+
+                # For conflicting names, regenerate with file size
+                conflicting_groups = set()
+                for new_name, group_ids in name_to_groups.items():
+                    if len(group_ids) > 1:
+                        conflicting_groups.update(group_ids)
+
+                # Regenerate names for conflicting groups
+                for group_id in conflicting_groups:
+                    group, (file, _) = group_rename_map[group_id]
+                    rename_info = deletion_strategy.get_rename_info(group, include_size=True)
+                    if rename_info:
+                        group_rename_map[group_id] = (group, rename_info)
+
+                # Collect final rename operations
+                for group_id, (group, (file_to_keep, new_name)) in group_rename_map.items():
+                    files_to_rename.append((file_to_keep.file_id, file_to_keep.name, new_name))
+
+            # Collect files to trash
             for group in duplicate_groups:
                 trash_list = deletion_strategy.select_files_to_trash(group, keep_path)
                 files_to_trash.extend(trash_list)
@@ -117,6 +152,8 @@ def delete(
                 print_info(f"Keep path pattern: {keep_path}")
             if same_folder_only:
                 print_info("Mode: Same-folder duplicates only")
+            if files_to_rename:
+                print_info(f"Files to rename: {len(files_to_rename)}")
             print_info(f"Files to trash: {len(files_to_trash)}")
             print_info(f"Space to recover: {naturalsize(total_space_saved)}")
 
@@ -137,11 +174,42 @@ def delete(
                     print_info("Cancelled.")
                     return
 
-            # Trash files
+            # Initialize managers
             service_factory = DriveServiceFactory(oauth_manager)
             rate_limiter = TokenBucketRateLimiter(settings.rate_limit)
             trash_manager = TrashManager(service_factory, rate_limiter)
 
+            # Rename files first (if needed)
+            if files_to_rename:
+                print_info("\nRenaming files with merged names...")
+                progress = create_progress()
+                rename_results = {}
+
+                with progress:
+                    task = progress.add_task(
+                        "[cyan]Renaming files...",
+                        total=len(files_to_rename),
+                    )
+
+                    for file_id, old_name, new_name in files_to_rename:
+                        try:
+                            success = trash_manager.rename_file(file_id, new_name, dry_run)
+                            rename_results[file_id] = success
+                            if not dry_run and success:
+                                print_info(f"  {old_name} → {new_name}")
+                        except ActionError as e:
+                            print_error(f"Failed to rename {old_name}: {e}")
+                            rename_results[file_id] = False
+
+                        progress.update(task, advance=1)
+
+                successful_renames = sum(1 for success in rename_results.values() if success)
+                if dry_run:
+                    print_success(f"[DRY RUN] Would rename {successful_renames} files")
+                else:
+                    print_success(f"Renamed {successful_renames} files")
+
+            # Trash files
             print_info("\nTrash operations in progress...")
             progress = create_progress()
 

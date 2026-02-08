@@ -69,6 +69,45 @@ class TrashManager:
         except Exception as e:
             raise ActionError(f"Failed to trash file {file_id}: {e}") from e
 
+    @exponential_backoff()
+    def rename_file(self, file_id: str, new_name: str, dry_run: bool = False) -> bool:
+        """Rename a file.
+
+        Args:
+            file_id: File ID to rename
+            new_name: New filename (with extension)
+            dry_run: If True, don't actually rename the file
+
+        Returns:
+            True if successful, False otherwise
+
+        Raises:
+            ActionError: If rename operation fails
+        """
+        if dry_run:
+            logger.info(f"[DRY RUN] Would rename file {file_id} to: {new_name}")
+            return True
+
+        try:
+            service = self.service_factory.create_service()
+            self.rate_limiter.acquire()
+
+            service.files().update(
+                fileId=file_id,
+                body={"name": new_name},
+            ).execute()
+
+            logger.info(f"Renamed file {file_id} to: {new_name}")
+            return True
+
+        except HttpError as e:
+            if e.resp.status == 404:
+                logger.warning(f"File not found: {file_id}")
+                return False
+            raise ActionError(f"Failed to rename file {file_id}: {e}") from e
+        except Exception as e:
+            raise ActionError(f"Failed to rename file {file_id}: {e}") from e
+
     def trash_files(self, file_ids: list[str], dry_run: bool = False) -> dict[str, bool]:
         """Trash multiple files.
 

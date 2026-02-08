@@ -5,6 +5,7 @@ from typing import Optional
 
 from ..common.logging import get_logger
 from ..detector.models import DuplicateGroup, FileRecord
+from .name_merger import NameMerger
 
 logger = get_logger(__name__)
 
@@ -138,11 +139,63 @@ class KeepDeepestPathStrategy(DeletionStrategy):
         return [f for f in group.files if f.file_id != deepest.file_id]
 
 
+class MergeNamesStrategy(DeletionStrategy):
+    """Merge all meaningful filename information, then trash duplicates."""
+
+    def __init__(self):
+        self.name_merger = NameMerger()
+
+    def select_files_to_trash(
+        self, group: DuplicateGroup, keep_path: Optional[str] = None
+    ) -> list[FileRecord]:
+        """Merge names, keep one file (renamed), trash rest."""
+        if keep_path:
+            matching_files = [f for f in group.files if fnmatch(f.path, keep_path)]
+            if matching_files:
+                return [f for f in group.files if not fnmatch(f.path, keep_path)]
+
+        # All files will be returned for potential trashing
+        # But we'll mark one for keeping/renaming via get_rename_info()
+        # For now, return all but the newest (we'll rename the newest)
+        newest = group.newest_file()
+        return [f for f in group.files if f.file_id != newest.file_id]
+
+    def get_rename_info(self, group: DuplicateGroup, include_size: bool = False) -> Optional[tuple[FileRecord, str]]:
+        """Get the file to keep and its new merged name.
+
+        Args:
+            group: Duplicate group
+            include_size: Whether to include file size in the name for uniqueness
+
+        Returns:
+            Tuple of (file_to_keep, new_name) or None if no rename needed
+        """
+        # Extract just the filenames (not full paths)
+        filenames = [f.name for f in group.files]
+
+        # Merge the names, optionally including file size
+        file_size = group.size if include_size else None
+        merged_name = self.name_merger.merge_names(filenames, file_size)
+
+        # Keep the newest file (arbitrary choice, content is identical)
+        file_to_keep = group.newest_file()
+
+        # Only rename if the merged name is different from current
+        if merged_name != file_to_keep.name:
+            logger.info(
+                f"Will rename {file_to_keep.name} -> {merged_name} "
+                f"(merged from {len(filenames)} duplicates)"
+            )
+            return (file_to_keep, merged_name)
+
+        return None
+
+
 def get_strategy(strategy_name: str) -> DeletionStrategy:
     """Get deletion strategy by name.
 
     Args:
-        strategy_name: Strategy name (newest, oldest, shortest, longest, deepest, path)
+        strategy_name: Strategy name (newest, oldest, shortest, longest, deepest, path, merge-names)
 
     Returns:
         DeletionStrategy instance
@@ -157,6 +210,7 @@ def get_strategy(strategy_name: str) -> DeletionStrategy:
         "longest": KeepLongestPathStrategy,
         "deepest": KeepDeepestPathStrategy,
         "path": KeepPathStrategy,
+        "merge-names": MergeNamesStrategy,
     }
 
     strategy_class = strategies.get(strategy_name.lower())
