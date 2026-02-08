@@ -28,10 +28,15 @@ delete_app = typer.Typer(help="Delete duplicate files")
 @delete_app.command()
 def delete(
     strategy: str = typer.Option(
-        ..., "--strategy", "-s", help="Keep strategy: newest, oldest, shortest, longest, path"
+        ..., "--strategy", "-s",
+        help="Keep strategy: newest, oldest, shortest, longest, deepest, path"
     ),
     keep_path: Optional[str] = typer.Option(
         None, "--keep-path", "-p", help="Glob pattern for paths to keep (for path strategy)"
+    ),
+    same_folder_only: bool = typer.Option(
+        False, "--same-folder-only",
+        help="Only delete duplicates within the same folder (keep cross-folder duplicates)"
     ),
     min_size: int = typer.Option(
         0, "--min-size", help="Minimum file size in bytes"
@@ -74,6 +79,26 @@ def delete(
                 print_success("No duplicates found!")
                 return
 
+            # Filter groups based on same-folder-only flag
+            if same_folder_only:
+                same_folder_groups = [g for g in duplicate_groups if g.are_all_in_same_folder()]
+                cross_folder_groups = [g for g in duplicate_groups if not g.are_all_in_same_folder()]
+
+                if cross_folder_groups:
+                    cross_folder_files = sum(g.count for g in cross_folder_groups)
+                    print_info(
+                        f"Skipping {len(cross_folder_groups)} groups ({cross_folder_files} files) "
+                        "with duplicates in different folders"
+                    )
+
+                duplicate_groups = same_folder_groups
+
+                if not duplicate_groups:
+                    print_info("No same-folder duplicates found!")
+                    if cross_folder_groups:
+                        print_info("All duplicates are in different folders (intentionally kept)")
+                    return
+
             # Collect files to trash
             files_to_trash = []
             for group in duplicate_groups:
@@ -90,6 +115,8 @@ def delete(
             print_info(f"Strategy: {strategy}")
             if keep_path:
                 print_info(f"Keep path pattern: {keep_path}")
+            if same_folder_only:
+                print_info("Mode: Same-folder duplicates only")
             print_info(f"Files to trash: {len(files_to_trash)}")
             print_info(f"Space to recover: {naturalsize(total_space_saved)}")
 

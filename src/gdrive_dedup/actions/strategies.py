@@ -118,11 +118,31 @@ class KeepPathStrategy(DeletionStrategy):
         return [f for f in group.files if not fnmatch(f.path, keep_path)]
 
 
+class KeepDeepestPathStrategy(DeletionStrategy):
+    """Keep the file with the deepest path (most nested in folder structure)."""
+
+    def select_files_to_trash(
+        self, group: DuplicateGroup, keep_path: Optional[str] = None
+    ) -> list[FileRecord]:
+        """Keep deepest path, trash rest."""
+        if keep_path:
+            matching_files = [f for f in group.files if fnmatch(f.path, keep_path)]
+            if matching_files:
+                return [f for f in group.files if not fnmatch(f.path, keep_path)]
+
+        # Calculate depth by counting path separators
+        def path_depth(file: FileRecord) -> int:
+            return file.path.count('/')
+
+        deepest = max(group.files, key=path_depth)
+        return [f for f in group.files if f.file_id != deepest.file_id]
+
+
 def get_strategy(strategy_name: str) -> DeletionStrategy:
     """Get deletion strategy by name.
 
     Args:
-        strategy_name: Strategy name (newest, oldest, shortest, longest, path)
+        strategy_name: Strategy name (newest, oldest, shortest, longest, deepest, path)
 
     Returns:
         DeletionStrategy instance
@@ -135,6 +155,7 @@ def get_strategy(strategy_name: str) -> DeletionStrategy:
         "oldest": KeepOldestStrategy,
         "shortest": KeepShortestPathStrategy,
         "longest": KeepLongestPathStrategy,
+        "deepest": KeepDeepestPathStrategy,
         "path": KeepPathStrategy,
     }
 

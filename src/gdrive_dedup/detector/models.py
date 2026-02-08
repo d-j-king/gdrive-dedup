@@ -66,3 +66,19 @@ class DuplicateGroup:
     def longest_path(self) -> FileRecord:
         """Get file with longest path."""
         return max(self.files, key=lambda f: len(f.path))
+
+    def are_all_in_same_folder(self) -> bool:
+        """Check if all files in this group are in the same folder.
+
+        Returns:
+            True if all files are in the same folder, False otherwise
+        """
+        if len(self.files) <= 1:
+            return True
+
+        # Extract folder path (everything before the last /)
+        def get_folder(path: str) -> str:
+            return path.rsplit('/', 1)[0] if '/' in path else ''
+
+        folders = {get_folder(f.path) for f in self.files}
+        return len(folders) == 1
