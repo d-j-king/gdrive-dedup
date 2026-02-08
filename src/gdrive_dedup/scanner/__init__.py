@@ -1,0 +1,1 @@
+"""Drive scanning functionality."""
