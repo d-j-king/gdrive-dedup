@@ -36,6 +36,8 @@ class EmbeddingStore:
                     path TEXT NOT NULL,
                     size INTEGER NOT NULL,
                     duration REAL,
+                    created_time TEXT,
+                    modified_time TEXT,
                     analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
                 """
@@ -68,7 +70,14 @@ class EmbeddingStore:
             logger.info(f"Embedding database initialized at {self.db_path}")
 
     def store_video_metadata(
-        self, file_id: str, name: str, path: str, size: int, duration: Optional[float] = None
+        self,
+        file_id: str,
+        name: str,
+        path: str,
+        size: int,
+        duration: Optional[float] = None,
+        created_time: Optional[str] = None,
+        modified_time: Optional[str] = None,
     ) -> None:
         """Store video metadata.
 
@@ -78,15 +87,17 @@ class EmbeddingStore:
             path: File path in Drive
             size: File size in bytes
             duration: Video duration in seconds
+            created_time: ISO format creation timestamp
+            modified_time: ISO format modification timestamp
         """
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO video_metadata
-                (file_id, name, path, size, duration)
-                VALUES (?, ?, ?, ?, ?)
+                (file_id, name, path, size, duration, created_time, modified_time)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (file_id, name, path, size, duration),
+                (file_id, name, path, size, duration, created_time, modified_time),
             )
 
     def store_frame_features(self, file_id: str, features: FrameFeatures) -> None:
@@ -209,13 +220,37 @@ class EmbeddingStore:
             conn.row_factory = sqlite3.Row
             cursor = conn.execute(
                 """
-                SELECT file_id, name, path, size, duration, analyzed_at
+                SELECT file_id, name, path, size, duration,
+                       created_time, modified_time, analyzed_at
                 FROM video_metadata
                 ORDER BY analyzed_at DESC
                 """
             )
 
             return [dict(row) for row in cursor]
+
+    def get_video_metadata_for_clustering(self, file_id: str) -> Optional[dict[str, Any]]:
+        """Get metadata for a specific video suitable for clustering.
+
+        Args:
+            file_id: Google Drive file ID
+
+        Returns:
+            Dict with file_id, name, created_time, modified_time, path
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute(
+                """
+                SELECT file_id, name, created_time, modified_time, path
+                FROM video_metadata
+                WHERE file_id = ?
+                """,
+                (file_id,),
+            )
+
+            row = cursor.fetchone()
+            return dict(row) if row else None
 
     def is_analyzed(self, file_id: str) -> bool:
         """Check if a video has been analyzed.

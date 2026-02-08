@@ -160,6 +160,8 @@ def analyze(
                             video_file.name,
                             video_file.path,
                             video_file.size,
+                            created_time=video_file.created_time.isoformat(),
+                            modified_time=video_file.modified_time.isoformat(),
                         )
 
                         # Extract frames and features

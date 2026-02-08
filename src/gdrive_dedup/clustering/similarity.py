@@ -7,51 +7,133 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from ..analyzer.feature_extractors import FrameFeatures
 from ..common.logging import get_logger
+from .metadata_similarity import MetadataFeatures, MetadataSimilarityScorer
 
 logger = get_logger(__name__)
 
 
 class SimilarityScorer:
-    """Compute similarity between video features."""
+    """Compute similarity between video features (visual + metadata).
+
+    Combines visual features (face, body, pose, scene) with metadata features
+    (temporal, filename, path) for robust similarity scoring.
+
+    Default weights (optimized for adult content clustering):
+    - Visual features: 60% total
+      - Face: 30% of visual (18% overall) - Strong when visible
+      - Body: 35% of visual (21% overall) - Primary identifier
+      - Scene: 20% of visual (12% overall) - Session identification
+      - Pose: 15% of visual (9% overall) - Contextual info
+    - Metadata features: 40% total
+      - Temporal: 50% of metadata (20% overall) - Same session/date
+      - Filename: 35% of metadata (14% overall) - User organization
+      - Path: 15% of metadata (6% overall) - Folder organization
+    """
 
     def __init__(
         self,
-        face_weight: float = 0.40,
-        body_weight: float = 0.25,
-        pose_weight: float = 0.20,
-        scene_weight: float = 0.15,
+        # Overall visual vs metadata balance
+        visual_weight: float = 0.60,
+        metadata_weight: float = 0.40,
+        # Visual feature weights (relative within visual features)
+        face_weight: float = 0.30,
+        body_weight: float = 0.35,
+        scene_weight: float = 0.20,
+        pose_weight: float = 0.15,
+        # Metadata feature weights (relative within metadata features)
+        temporal_weight: float = 0.50,
+        filename_weight: float = 0.35,
+        path_weight: float = 0.15,
     ) -> None:
         """Initialize similarity scorer with feature weights.
 
         Args:
-            face_weight: Weight for face similarity
-            body_weight: Weight for body similarity
-            pose_weight: Weight for pose similarity
-            scene_weight: Weight for scene similarity
+            visual_weight: Overall weight for visual features
+            metadata_weight: Overall weight for metadata features
+            face_weight: Weight for face similarity (within visual)
+            body_weight: Weight for body similarity (within visual)
+            scene_weight: Weight for scene similarity (within visual)
+            pose_weight: Weight for pose similarity (within visual)
+            temporal_weight: Weight for temporal similarity (within metadata)
+            filename_weight: Weight for filename similarity (within metadata)
+            path_weight: Weight for path similarity (within metadata)
         """
-        total = face_weight + body_weight + pose_weight + scene_weight
-        self.face_weight = face_weight / total
-        self.body_weight = body_weight / total
-        self.pose_weight = pose_weight / total
-        self.scene_weight = scene_weight / total
+        # Normalize overall weights
+        total_overall = visual_weight + metadata_weight
+        self.visual_weight = visual_weight / total_overall
+        self.metadata_weight = metadata_weight / total_overall
+
+        # Normalize visual feature weights
+        total_visual = face_weight + body_weight + pose_weight + scene_weight
+        self.face_weight = face_weight / total_visual
+        self.body_weight = body_weight / total_visual
+        self.pose_weight = pose_weight / total_visual
+        self.scene_weight = scene_weight / total_visual
+
+        # Initialize metadata scorer
+        self.metadata_scorer = MetadataSimilarityScorer(
+            temporal_weight=temporal_weight,
+            filename_weight=filename_weight,
+            path_weight=path_weight,
+        )
 
         logger.info(
-            f"Similarity weights: face={self.face_weight:.2f}, "
-            f"body={self.body_weight:.2f}, pose={self.pose_weight:.2f}, "
-            f"scene={self.scene_weight:.2f}"
+            f"Overall weights: visual={self.visual_weight:.2f}, "
+            f"metadata={self.metadata_weight:.2f}"
+        )
+        logger.info(
+            f"Visual weights: face={self.face_weight:.2f}, "
+            f"body={self.body_weight:.2f}, scene={self.scene_weight:.2f}, "
+            f"pose={self.pose_weight:.2f}"
         )
 
     def compute_similarity(
-        self, features_a: list[FrameFeatures], features_b: list[FrameFeatures]
+        self,
+        features_a: list[FrameFeatures],
+        features_b: list[FrameFeatures],
+        metadata_a: Optional[MetadataFeatures] = None,
+        metadata_b: Optional[MetadataFeatures] = None,
     ) -> float:
         """Compute similarity between two videos.
+
+        Combines visual features (face, body, pose, scene) with metadata
+        (temporal, filename, path) for comprehensive similarity scoring.
+
+        Args:
+            features_a: Visual features from video A
+            features_b: Visual features from video B
+            metadata_a: Metadata features from video A
+            metadata_b: Metadata features from video B
+
+        Returns:
+            Similarity score (0-1, higher is more similar)
+        """
+        # Compute visual similarity
+        visual_sim = self._compute_visual_similarity(features_a, features_b)
+
+        # Compute metadata similarity if available
+        metadata_sim = 0.0
+        if metadata_a and metadata_b:
+            metadata_sim = self.metadata_scorer.compute_similarity(metadata_a, metadata_b)
+
+        # Weighted combination
+        total_similarity = (
+            self.visual_weight * visual_sim + self.metadata_weight * metadata_sim
+        )
+
+        return total_similarity
+
+    def _compute_visual_similarity(
+        self, features_a: list[FrameFeatures], features_b: list[FrameFeatures]
+    ) -> float:
+        """Compute visual similarity between two videos.
 
         Args:
             features_a: Features from video A
             features_b: Features from video B
 
         Returns:
-            Similarity score (0-1, higher is more similar)
+            Visual similarity score (0-1)
         """
         # Aggregate features across frames
         agg_a = self._aggregate_features(features_a)
@@ -63,15 +145,15 @@ class SimilarityScorer:
         pose_sim = self._embedding_similarity(agg_a["pose"], agg_b["pose"])
         scene_sim = self._embedding_similarity(agg_a["scene"], agg_b["scene"])
 
-        # Weighted combination
-        total_similarity = (
+        # Weighted combination (weights already normalized)
+        visual_similarity = (
             self.face_weight * face_sim
             + self.body_weight * body_sim
             + self.pose_weight * pose_sim
             + self.scene_weight * scene_sim
         )
 
-        return total_similarity
+        return visual_similarity
 
     def _aggregate_features(self, features_list: list[FrameFeatures]) -> dict:
         """Aggregate features across multiple frames.
@@ -183,12 +265,15 @@ class VideoComparator:
         self.scorer = scorer
 
     def build_similarity_matrix(
-        self, video_features: dict[str, list[FrameFeatures]]
+        self,
+        video_features: dict[str, list[FrameFeatures]],
+        video_metadata: Optional[dict[str, MetadataFeatures]] = None,
     ) -> tuple[list[str], np.ndarray]:
         """Build pairwise similarity matrix for all videos.
 
         Args:
             video_features: Dict mapping file_id to list of FrameFeatures
+            video_metadata: Optional dict mapping file_id to MetadataFeatures
 
         Returns:
             Tuple of (file_ids, similarity_matrix)
@@ -207,8 +292,15 @@ class VideoComparator:
                 if i == j:
                     similarity_matrix[i][j] = 1.0
                 else:
+                    # Get metadata if available
+                    meta_i = video_metadata.get(file_ids[i]) if video_metadata else None
+                    meta_j = video_metadata.get(file_ids[j]) if video_metadata else None
+
                     sim = self.scorer.compute_similarity(
-                        video_features[file_ids[i]], video_features[file_ids[j]]
+                        video_features[file_ids[i]],
+                        video_features[file_ids[j]],
+                        meta_i,
+                        meta_j,
                     )
                     similarity_matrix[i][j] = sim
                     similarity_matrix[j][i] = sim  # Symmetric

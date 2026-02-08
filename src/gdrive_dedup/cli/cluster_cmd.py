@@ -1,6 +1,7 @@
 """Cluster command for grouping similar videos."""
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -8,6 +9,7 @@ import typer
 
 from ..analyzer.embeddings import EmbeddingStore
 from ..clustering.clusterer import VideoClustering
+from ..clustering.metadata_similarity import MetadataFeatures
 from ..clustering.similarity import SimilarityScorer, VideoComparator
 from ..common.logging import get_logger
 from ..config.settings import get_settings
@@ -70,17 +72,44 @@ def cluster(
         print_info(f"Loaded {len(videos)} analyzed videos")
 
         # Load features for all videos
-        print_info("Loading features...")
+        print_info("Loading visual features and metadata...")
         video_features = {}
+        video_metadata = {}
         for video in videos:
             features = embedding_store.get_video_features(video["file_id"])
             if features:
                 video_features[video["file_id"]] = features
 
-        print_success(f"Loaded features for {len(video_features)} videos")
+                # Create MetadataFeatures from video record
+                try:
+                    created_time = (
+                        datetime.fromisoformat(video["created_time"])
+                        if video.get("created_time")
+                        else datetime.now()
+                    )
+                    modified_time = (
+                        datetime.fromisoformat(video["modified_time"])
+                        if video.get("modified_time")
+                        else datetime.now()
+                    )
+
+                    video_metadata[video["file_id"]] = MetadataFeatures(
+                        file_id=video["file_id"],
+                        name=video["name"],
+                        created_time=created_time,
+                        modified_time=modified_time,
+                        path=video["path"],
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to create metadata for {video['file_id']}: {e}")
+
+        print_success(
+            f"Loaded features for {len(video_features)} videos "
+            f"(with metadata for {len(video_metadata)} videos)"
+        )
 
         # Compute similarity matrix
-        print_info("Computing similarity matrix...")
+        print_info("Computing similarity matrix (visual + metadata)...")
         scorer = SimilarityScorer(
             face_weight=face_weight,
             body_weight=body_weight,
@@ -89,7 +118,9 @@ def cluster(
         )
 
         comparator = VideoComparator(scorer)
-        file_ids, similarity_matrix = comparator.build_similarity_matrix(video_features)
+        file_ids, similarity_matrix = comparator.build_similarity_matrix(
+            video_features, video_metadata
+        )
 
         print_success("Similarity matrix computed")
 
@@ -186,15 +217,41 @@ def find_similar(
 
         videos = embedding_store.get_all_videos()
         video_features = {}
+        video_metadata = {}
         for video in videos:
             features = embedding_store.get_video_features(video["file_id"])
             if features:
                 video_features[video["file_id"]] = features
 
+                # Create MetadataFeatures
+                try:
+                    created_time = (
+                        datetime.fromisoformat(video["created_time"])
+                        if video.get("created_time")
+                        else datetime.now()
+                    )
+                    modified_time = (
+                        datetime.fromisoformat(video["modified_time"])
+                        if video.get("modified_time")
+                        else datetime.now()
+                    )
+
+                    video_metadata[video["file_id"]] = MetadataFeatures(
+                        file_id=video["file_id"],
+                        name=video["name"],
+                        created_time=created_time,
+                        modified_time=modified_time,
+                        path=video["path"],
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to create metadata for {video['file_id']}: {e}")
+
         # Compute similarity
         scorer = SimilarityScorer()
         comparator = VideoComparator(scorer)
-        file_ids, similarity_matrix = comparator.build_similarity_matrix(video_features)
+        file_ids, similarity_matrix = comparator.build_similarity_matrix(
+            video_features, video_metadata
+        )
 
         # Find similar videos
         clustering = VideoClustering(min_similarity=min_similarity)

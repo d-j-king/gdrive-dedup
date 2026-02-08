@@ -2,36 +2,67 @@
 
 ## Overview
 
-The video clustering feature uses state-of-the-art AI to automatically identify and organize videos with the same actors, scenes, or content. It combines multiple computer vision models to provide robust matching even when faces are obscured or videos are shot from different angles.
+The video clustering feature uses state-of-the-art AI combined with intelligent metadata analysis to automatically identify and organize videos with the same actors, scenes, or content. It combines multiple computer vision models with filename parsing, temporal analysis, and folder organization to provide highly accurate clustering.
 
 ## Features
 
-### Multi-Modal Analysis
+### Multi-Modal Analysis (Visual + Metadata)
 
-**Face Recognition (InsightFace)**
-- Detects and recognizes faces across videos
-- Handles multiple faces per frame
-- Creates unique embeddings for each person
-- Works with partial faces and different angles
+The clustering system combines **visual features** (60% weight) with **metadata analysis** (40% weight) for superior accuracy:
 
-**Body Features (CLIP)**
+#### Visual Features (60% total weight)
+
+**Body Features (CLIP)** - 21% overall weight
 - Analyzes full body appearance
 - Recognizes body shape, build, and proportions
 - Detects skin tone and texture
 - Identifies tattoos and distinguishing marks
 - Understands clothing and accessories
+- **Primary identifier for actor matching**
 
-**Pose Detection (MediaPipe)**
+**Face Recognition (InsightFace)** - 18% overall weight
+- Detects and recognizes faces across videos
+- Handles multiple faces per frame
+- Creates unique embeddings for each person
+- Works with partial faces and different angles
+- **Strong signal when faces are visible**
+
+**Scene Understanding (CLIP)** - 12% overall weight
+- Analyzes lighting, setting, and environment
+- Recognizes props and objects
+- Understands context and composition
+- Helps identify segments from same recording
+
+**Pose Detection (MediaPipe)** - 9% overall weight
 - Tracks 33 body keypoints
 - Detects body positions and poses
 - Helps match videos from same scenes
 - Works with full or partial body visibility
 
-**Scene Understanding (CLIP)**
-- Analyzes lighting, setting, and environment
-- Recognizes props and objects
-- Understands context and composition
-- Helps identify segments from same recording
+#### Metadata Features (40% total weight)
+
+**Temporal Similarity** - 20% overall weight
+- **Extracts dates from filenames** (2019-07-31, 20190731, Jul_31_2019, etc.)
+- Uses file creation/modification timestamps
+- Videos from same day/session get high similarity scores
+  - Same day (0-24 hrs): 0.9-1.0
+  - Same week (1-7 days): 0.7-0.9
+  - Same month (7-30 days): 0.4-0.7
+  - Beyond 30 days: exponential decay
+- **Crucial for identifying same recording session**
+
+**Filename Similarity** - 14% overall weight
+- Cleans and compares filename text
+- Identifies common actor names, scene descriptions
+- Removes junk patterns (IMG_1234, copy of, (1), etc.)
+- Fuzzy text matching with substring boosting
+- **Leverages your existing file organization**
+
+**Path Similarity** - 6% overall weight
+- Files in same folder: 1.0 similarity
+- Nearby folders get proportional scores
+- Respects user's folder organization
+- **Groups files you've already organized together**
 
 ### Smart Organization Strategy
 
