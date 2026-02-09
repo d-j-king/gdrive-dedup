@@ -42,14 +42,21 @@ def delete(
         0, "--min-size", help="Minimum file size in bytes"
     ),
     dry_run: bool = typer.Option(
-        False, "--dry-run", help="Show what would be deleted without deleting"
+        True, "--dry-run/--no-dry-run", help="Preview changes without executing (default: dry-run)"
+    ),
+    execute: bool = typer.Option(
+        False, "--execute", help="Execute the deletion (overrides dry-run)"
     ),
     yes: bool = typer.Option(
-        False, "--yes", "-y", help="Skip confirmation prompt"
+        False, "--yes", "-y", help="Skip confirmation prompt (only with --execute)"
     ),
 ) -> None:
     """Delete duplicate files using a keep strategy."""
     settings = get_settings()
+
+    # If --execute is specified, it overrides dry-run
+    if execute:
+        dry_run = False
 
     try:
         # Validate strategy
@@ -158,7 +165,7 @@ def delete(
             print_info(f"Space to recover: {naturalsize(total_space_saved)}")
 
             if dry_run:
-                print_warning("\n[DRY RUN] No files will be trashed\n")
+                print_warning("\n[DRY RUN MODE] Preview only - no files will be modified\n")
             else:
                 print_warning(
                     "\nWARNING: Files will be moved to trash (not permanently deleted)"
@@ -238,6 +245,19 @@ def delete(
 
             if dry_run:
                 print_success(f"\n[DRY RUN] Would trash {successful} files")
+                print_info("\nTo execute this deletion, run:")
+                cmd_parts = ["gdrive-dedup delete --execute"]
+                if strategy != "merge-names":
+                    cmd_parts.append(f"--strategy {strategy}")
+                if keep_path:
+                    cmd_parts.append(f"--keep-path '{keep_path}'")
+                if not same_folder_only:
+                    cmd_parts.append("--all-folders")
+                if min_size > 0:
+                    cmd_parts.append(f"--min-size {min_size}")
+                print_info(f"  {' '.join(cmd_parts)}")
+                print_info("\nOr to skip confirmation prompt:")
+                print_info(f"  {' '.join(cmd_parts)} --yes")
             else:
                 print_success(f"\nTrashed {successful} files")
                 if failed > 0:
