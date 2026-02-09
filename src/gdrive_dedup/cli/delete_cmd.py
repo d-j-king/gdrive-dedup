@@ -28,15 +28,15 @@ delete_app = typer.Typer(help="Delete duplicate files")
 @delete_app.command()
 def delete(
     strategy: str = typer.Option(
-        ..., "--strategy", "-s",
-        help="Keep strategy: newest, oldest, shortest, longest, deepest, path, merge-names"
+        "merge-names", "--strategy", "-s",
+        help="Keep strategy: newest, oldest, shortest, longest, deepest, path, merge-names [default: merge-names]"
     ),
     keep_path: Optional[str] = typer.Option(
         None, "--keep-path", "-p", help="Glob pattern for paths to keep (for path strategy)"
     ),
     same_folder_only: bool = typer.Option(
-        False, "--same-folder-only",
-        help="Only delete duplicates within the same folder (keep cross-folder duplicates)"
+        True, "--same-folder-only/--all-folders",
+        help="Only delete duplicates within the same folder (keep cross-folder duplicates) [default: same-folder-only]"
     ),
     min_size: int = typer.Option(
         0, "--min-size", help="Minimum file size in bytes"
