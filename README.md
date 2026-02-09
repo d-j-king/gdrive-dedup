@@ -90,6 +90,16 @@ ruff check .
 mypy src/
 ```
 
+## Companion Tool
+
+Looking for **AI-powered media organization**? Check out **[gdrive-curator](../gdrive-curator)** - a separate tool that uses machine learning to intelligently group similar videos and photos by content (same actors, scenes, or events).
+
+**Why two tools?**
+- **gdrive-dedup** (this tool): Lightweight, finds exact duplicates, runs anywhere
+- **gdrive-curator**: Heavy ML stack, groups similar content, GPU recommended
+
+They share authentication but serve different purposes.
+
 ## License
 
 MIT

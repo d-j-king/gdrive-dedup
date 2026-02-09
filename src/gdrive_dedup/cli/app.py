@@ -4,12 +4,9 @@ import typer
 
 from ..common.logging import setup_logging
 from ..config.settings import get_settings
-from .analyze_cmd import analyze_app
 from .auth_cmd import auth_app
-from .cluster_cmd import cluster_app
 from .config_cmd import config_app
 from .delete_cmd import delete, delete_app
-from .organize_cmd import organize_app
 from .report_cmd import report, report_app
 from .review_cmd import review, review_app
 from .scan_cmd import scan, scan_app
@@ -23,9 +20,6 @@ app = typer.Typer(
 # Register subcommands
 app.add_typer(auth_app, name="auth")
 app.add_typer(config_app, name="config")
-app.add_typer(analyze_app, name="analyze")
-app.add_typer(cluster_app, name="cluster")
-app.add_typer(organize_app, name="organize")
 
 # Add main commands
 app.command(name="scan")(scan)
